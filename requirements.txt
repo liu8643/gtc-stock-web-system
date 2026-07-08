@@ -1,0 +1,9 @@
+pandas
+numpy
+yfinance
+requests
+reportlab>=4.0
+lxml
+streamlit
+xlsxwriter
+openpyxl
