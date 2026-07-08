@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 import tempfile
 import time
+import json
 
 import pandas as pd
 import streamlit as st
@@ -24,7 +25,7 @@ except Exception as exc:  # pragma: no cover
     st.stop()
 
 APP_TITLE = "GTC 股票專業版看盤分析系統"
-APP_VERSION = "v5.3.1-Web-Core-Separation-FIX"
+APP_VERSION = "v5.3.5-Web-AutoRefresh-BattleCache-FIX"
 DEFAULT_SYMBOLS = "2330,2382,3231,2308,3017,4979,AAPL,NVDA,MSFT"
 CORE_COLUMNS = [
     "排名", "燈號", "市場", "代號", "名稱", "顯示價", "漲跌幅%",
@@ -43,7 +44,59 @@ ADVANCED_COLUMNS = [
 ]
 
 
+RUNTIME_DIR = Path.cwd() / ".gtc_runtime"
+RUNTIME_CACHE_PATH = RUNTIME_DIR / "gtc_web_state_cache.json"
+
+
+def _load_runtime_cache() -> dict[str, Any]:
+    """Load local UI/runtime state so browser meta-refresh does not lose battle-plan symbols."""
+    try:
+        if RUNTIME_CACHE_PATH.exists():
+            with RUNTIME_CACHE_PATH.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    return {}
+
+
+def _save_runtime_cache() -> None:
+    """Persist only small UI state; analysis results are intentionally not cached."""
+    try:
+        RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        data = {
+            "symbol_text": st.session_state.get("symbol_text", DEFAULT_SYMBOLS),
+            "battle_plan_map": st.session_state.get("battle_plan_map", {}),
+            "battle_plan_status": st.session_state.get("battle_plan_status", ""),
+            "battle_plan_filename": st.session_state.get("battle_plan_filename", ""),
+            "auto_refresh_enabled": bool(st.session_state.get("auto_refresh_enabled", False)),
+            "refresh_seconds": int(st.session_state.get("refresh_seconds", 30)),
+            "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        with RUNTIME_CACHE_PATH.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        # Cache failure must not block stock analysis.
+        pass
+
+
+def _clear_runtime_cache() -> None:
+    try:
+        if RUNTIME_CACHE_PATH.exists():
+            RUNTIME_CACHE_PATH.unlink()
+    except Exception:
+        pass
+
 def init_state() -> None:
+    """Initialize Streamlit state and restore local cache on every new session.
+
+    Streamlit browser/meta refresh may create a new script session.  The file_uploader
+    control cannot retain the uploaded binary after a hard browser refresh, so the
+    app must restore the already-parsed battle plan mapping and synchronized symbol
+    list from a small local JSON cache.
+    """
+    cache = _load_runtime_cache()
     defaults = {
         "symbol_text": DEFAULT_SYMBOLS,
         "battle_plan_map": {},
@@ -57,9 +110,29 @@ def init_state() -> None:
         "refresh_seconds": 30,
         "last_auto_run_ts": 0.0,
     }
+    cache_keys = {
+        "symbol_text",
+        "battle_plan_map",
+        "battle_plan_status",
+        "battle_plan_filename",
+        "auto_refresh_enabled",
+        "refresh_seconds",
+    }
     for key, value in defaults.items():
         if key not in st.session_state:
-            st.session_state[key] = value
+            if key in cache_keys and key in cache:
+                st.session_state[key] = cache.get(key, value)
+            else:
+                st.session_state[key] = value
+
+    # If a saved battle plan exists, make the status explicit after browser refresh.
+    if st.session_state.get("battle_plan_map") and st.session_state.get("battle_plan_filename"):
+        restored_count = len(st.session_state.get("battle_plan_map", {}))
+        if "已從本機快取恢復" not in str(st.session_state.get("battle_plan_status", "")):
+            st.session_state.battle_plan_status = (
+                f"作戰表：{st.session_state.battle_plan_filename}｜已從本機快取恢復 {restored_count} 檔；"
+                "可直接執行分析，不必重新上傳"
+            )
 
 
 def parse_symbols(text: str) -> list[str]:
@@ -83,6 +156,7 @@ def load_battle_plan_from_upload(uploaded_file) -> None:
         st.session_state.symbol_text = ",".join(code_order)
     sync_note = f"｜已同步 {len(code_order)} 檔到股票代號輸入框" if code_order else ""
     st.session_state.battle_plan_status = f"作戰表：{uploaded_file.name}｜Sheet=個股作戰表｜{status}{sync_note}"
+    _save_runtime_cache()
 
 
 def apply_battle_plan_to_result(result: dict[str, Any]) -> dict[str, Any]:
@@ -346,14 +420,19 @@ def render_ui() -> None:
         if uploaded is not None:
             try:
                 load_battle_plan_from_upload(uploaded)
+                _save_runtime_cache()
                 st.success("作戰表匯入完成，股票代碼已同步。")
             except Exception as exc:
                 st.session_state.battle_plan_status = f"作戰表：匯入失敗｜{exc}"
+                _save_runtime_cache()
                 st.error(str(exc))
         st.info(st.session_state.battle_plan_status)
+        if st.session_state.get("battle_plan_map"):
+            st.caption(f"快取作戰表：{len(st.session_state.battle_plan_map)} 檔；瀏覽器刷新後仍保留控制價位與股票清單。")
         advanced = st.checkbox("顯示進階欄位", value=False)
-        st.session_state.auto_refresh_enabled = st.checkbox("啟用自動刷新", value=st.session_state.auto_refresh_enabled)
+        st.session_state.auto_refresh_enabled = st.checkbox("啟用自動刷新", value=bool(st.session_state.auto_refresh_enabled))
         st.session_state.refresh_seconds = int(st.number_input("刷新秒數", min_value=10, max_value=300, value=int(st.session_state.refresh_seconds), step=5))
+        _save_runtime_cache()
         if st.session_state.auto_refresh_enabled:
             st.caption(f"自動刷新已啟用：每 {st.session_state.refresh_seconds} 秒重新整理一次。本機 localhost 使用。")
             st.markdown(f"<meta http-equiv='refresh' content='{st.session_state.refresh_seconds}'>", unsafe_allow_html=True)
@@ -363,6 +442,7 @@ def render_ui() -> None:
     col_input, col_btn1, col_btn2 = st.columns([7, 1.2, 1.2])
     with col_input:
         st.session_state.symbol_text = st.text_input("股票代號（逗號分隔）", value=st.session_state.symbol_text)
+        _save_runtime_cache()
     with col_btn1:
         run_clicked = st.button("執行分析", type="primary", use_container_width=True)
     with col_btn2:
@@ -373,6 +453,7 @@ def render_ui() -> None:
         st.session_state.errors = []
         st.session_state.market_overview = "加權：- ｜ 台積電：- ｜ 上漲/下跌：-/- ｜ 量能：未知\n市場模式：尚無資料 ｜ 今日策略：尚無資料"
         st.session_state.last_update_time = None
+        _save_runtime_cache()
         st.rerun()
 
     def execute_analysis_from_current_symbols(trigger: str) -> None:
@@ -389,6 +470,7 @@ def render_ui() -> None:
             st.session_state.market_overview = core.build_market_overview(results)
         except Exception as exc:
             st.session_state.market_overview = f"大盤總覽更新失敗：{exc}"
+        _save_runtime_cache()
         if trigger == "auto":
             st.toast("自動刷新完成")
 
