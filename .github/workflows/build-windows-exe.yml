@@ -1,0 +1,49 @@
+name: build-windows-exe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Syntax check
+        shell: pwsh
+        run: |
+          python -m py_compile main.py
+          python -m py_compile gtc_core_engine.py
+
+      - name: Core equivalence test
+        shell: pwsh
+        run: |
+          python test_v53_core_equivalence.py
+
+      - name: Build Windows EXE
+        shell: pwsh
+        run: |
+          pyinstaller --onefile --name GTC_Stock_Web_v5_3_1 --collect-all streamlit --collect-all pandas --collect-all yfinance main.py
+
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-EXE
+          path: dist/GTC_Stock_Web_v5_3_1.exe
