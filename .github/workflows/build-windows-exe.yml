@@ -33,6 +33,41 @@ jobs:
           python -m py_compile gtc_core_engine.py
           python -m py_compile launcher.py
 
+      - name: Dependency smoke test
+        shell: pwsh
+        run: |
+          python - <<'PY'
+          import streamlit
+          import pandas
+          import yfinance
+          import requests
+          import reportlab
+          import openpyxl
+          import xlrd
+          import xlsxwriter
+          import altair
+          import pyarrow
+          import PIL
+          import curl_cffi
+          import bs4
+          import lxml
+          import html5lib
+          import numpy
+          import certifi
+          import urllib3
+          import charset_normalizer
+          import idna
+          import dateutil
+          import pytz
+          import tzdata
+          import frozendict
+          import multitasking
+          import peewee
+          import platformdirs
+          import watchdog
+          print("Dependency smoke test PASS")
+          PY
+
       - name: Core equivalence test
         shell: pwsh
         run: |
@@ -41,11 +76,35 @@ jobs:
       - name: Build Windows EXE via launcher
         shell: pwsh
         run: |
-          pyinstaller --onefile --name GTC_Stock_Web_v5_3_2 `
+          pyinstaller --onefile --name GTC_Stock_Web_v5_3_3 `
             --collect-all streamlit `
             --collect-all pandas `
             --collect-all yfinance `
+            --collect-all requests `
+            --collect-all reportlab `
+            --collect-all openpyxl `
+            --collect-all xlrd `
+            --collect-all xlsxwriter `
             --collect-all altair `
+            --collect-all pyarrow `
+            --collect-all numpy `
+            --collect-all PIL `
+            --collect-all curl_cffi `
+            --collect-all bs4 `
+            --collect-all lxml `
+            --collect-all html5lib `
+            --collect-all certifi `
+            --collect-all urllib3 `
+            --collect-all charset_normalizer `
+            --collect-all idna `
+            --collect-all dateutil `
+            --collect-all pytz `
+            --collect-all tzdata `
+            --collect-all frozendict `
+            --collect-all multitasking `
+            --collect-all peewee `
+            --collect-all platformdirs `
+            --collect-all watchdog `
             --hidden-import streamlit.web.cli `
             --add-data "main.py;." `
             --add-data "gtc_core_engine.py;." `
@@ -54,5 +113,5 @@ jobs:
       - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
         with:
-          name: Windows-EXE-v5.3.2
-          path: dist/GTC_Stock_Web_v5_3_2.exe
+          name: Windows-EXE-v5.3.3
+          path: dist/GTC_Stock_Web_v5_3_3.exe
