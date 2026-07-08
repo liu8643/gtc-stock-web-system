@@ -6,6 +6,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-windows-exe:
     runs-on: windows-latest
@@ -36,37 +40,7 @@ jobs:
       - name: Dependency smoke test
         shell: pwsh
         run: |
-          python - <<'PY'
-          import streamlit
-          import pandas
-          import yfinance
-          import requests
-          import reportlab
-          import openpyxl
-          import xlrd
-          import xlsxwriter
-          import altair
-          import pyarrow
-          import PIL
-          import curl_cffi
-          import bs4
-          import lxml
-          import html5lib
-          import numpy
-          import certifi
-          import urllib3
-          import charset_normalizer
-          import idna
-          import dateutil
-          import pytz
-          import tzdata
-          import frozendict
-          import multitasking
-          import peewee
-          import platformdirs
-          import watchdog
-          print("Dependency smoke test PASS")
-          PY
+          python -c "import streamlit, pandas, yfinance, requests, reportlab, openpyxl, xlrd, xlsxwriter, altair, pyarrow, PIL, curl_cffi, bs4, lxml, html5lib, numpy, certifi, urllib3, charset_normalizer, idna, dateutil, pytz, tzdata, frozendict, multitasking, peewee, platformdirs, watchdog; print('Dependency smoke test PASS')"
 
       - name: Core equivalence test
         shell: pwsh
